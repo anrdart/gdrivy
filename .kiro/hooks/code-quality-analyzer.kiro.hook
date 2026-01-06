@@ -1,0 +1,20 @@
+{
+  "enabled": true,
+  "name": "Code Quality Analyzer",
+  "description": "Analyzes modified source code for potential improvements including code smells, design patterns, and best practices. Provides suggestions for readability, maintainability, and performance optimizations.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "src/**/*.ts",
+      "src/**/*.tsx",
+      "src/**/*.js",
+      "src/**/*.svelte",
+      "server/src/**/*.ts"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Analyze the code changes I just made for potential improvements. Please review for:\n\n1. **Code Smells**: Identify any anti-patterns, duplicated code, long methods, or overly complex logic\n2. **Design Patterns**: Suggest applicable design patterns that could improve the code structure\n3. **Best Practices**: Check adherence to TypeScript/JavaScript best practices and conventions\n4. **Readability**: Suggest improvements for naming, comments, and code organization\n5. **Maintainability**: Identify tightly coupled code or areas that could benefit from better abstraction\n6. **Performance**: Flag any potential performance issues or optimization opportunities\n\nProvide actionable suggestions while ensuring the existing functionality is preserved. If you suggest running any commands, use `bun` instead of `npm`."
+  }
+}
