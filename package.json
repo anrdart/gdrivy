@@ -8,10 +8,15 @@
     "dev:server": "cd server && npm run dev",
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:server\"",
     "build": "tsc -b && vite build",
+    "build:server": "cd server && npm run build",
+    "build:all": "npm run build && npm run build:server",
+    "start:server": "cd server && npm run start",
+    "preview:all": "concurrently \"npm run preview\" \"npm run start:server\"",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:all": "npm run test && cd server && npm run test"
   },
   "dependencies": {
     "axios": "^1.7.2",
