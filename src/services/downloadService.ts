@@ -3,7 +3,7 @@ import { ErrorCode } from '../types'
 import { createAppError } from './errorHandler'
 import { getRetryManager } from './retryManager'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 
 /**
  * Progress callback type for download operations

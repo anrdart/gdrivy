@@ -7,7 +7,7 @@ import type {
 } from '../types'
 import { LinkParserService } from '../services/linkParser'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 
 interface AppState {
   // Current input

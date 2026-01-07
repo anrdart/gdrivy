@@ -229,6 +229,14 @@ export class GoogleDriveService {
    * Handle Google API errors and convert to our error types
    */
   private handleApiError(error: unknown): GoogleDriveError {
+    // --- DEBUG LOGGING ---
+    console.error("🔥🔥🔥 DEBUG ERROR GOOGLE:", error);
+    const anyError = error as any;
+    if (anyError.response) {
+      console.error("📦 DATA DARI GOOGLE:", JSON.stringify(anyError.response.data, null, 2));
+    }
+    // ---------------------
+
     if (error instanceof GoogleDriveError) {
       return error
     }
