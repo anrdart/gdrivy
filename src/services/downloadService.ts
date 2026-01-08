@@ -2,6 +2,7 @@ import type { FileMetadata, FolderMetadata, AppError } from '../types'
 import { ErrorCode } from '../types'
 import { createAppError } from './errorHandler'
 import { getRetryManager } from './retryManager'
+import api from '../lib/api'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 
@@ -38,37 +39,47 @@ export class DownloadService {
   private abortControllers: Map<string, AbortController> = new Map()
 
   /**
-   * Fetch metadata for a file or folder
+   * Fetch metadata for a file or folder using axios
    * @param id - File or folder ID
    * @param type - 'file' or 'folder'
    */
   async fetchMetadata(id: string, type: 'file' | 'folder'): Promise<FileMetadata | FolderMetadata> {
-    const endpoint = type === 'folder'
-      ? `${API_BASE_URL}/api/folder/${id}/files`
-      : `${API_BASE_URL}/api/metadata/${id}`
+    try {
+      const endpoint = type === 'folder'
+        ? `/api/folder/${id}/files`
+        : `/api/metadata/${id}`
 
-    const response = await fetch(endpoint, {
-      credentials: 'include', // Include cookies for authenticated requests (Requirements: 3.1, 3.2)
-    })
-    const data = await response.json()
+      const { data } = await api.get(endpoint)
 
-    if (!response.ok || !data.success) {
-      const errorCode = this.mapHttpErrorToCode(response.status, data.error?.code)
-      throw createAppError(errorCode)
-    }
-
-    // Transform folder response to FolderMetadata format
-    if (type === 'folder' && data.data) {
-      const folderData = data.data as { folderId: string; folderName: string; files: FileMetadata[]; totalSize?: number }
-      return {
-        id: folderData.folderId,
-        name: folderData.folderName,
-        files: folderData.files,
-        totalSize: folderData.totalSize || folderData.files.reduce((sum, file) => sum + file.size, 0),
+      if (!data.success) {
+        const errorCode = this.mapHttpErrorToCode(0, data.error?.code)
+        throw createAppError(errorCode)
       }
-    }
 
-    return data.data
+      // Transform folder response to FolderMetadata format
+      if (type === 'folder' && data.data) {
+        const folderData = data.data as { folderId: string; folderName: string; files: FileMetadata[]; totalSize?: number }
+        return {
+          id: folderData.folderId,
+          name: folderData.folderName,
+          files: folderData.files,
+          totalSize: folderData.totalSize || folderData.files.reduce((sum, file) => sum + file.size, 0),
+        }
+      }
+
+      return data.data
+    } catch (error) {
+      // Handle axios errors
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { status?: number; data?: { error?: { code?: string } } } }
+        const errorCode = this.mapHttpErrorToCode(
+          axiosError.response?.status || 0,
+          axiosError.response?.data?.error?.code
+        )
+        throw createAppError(errorCode)
+      }
+      throw error
+    }
   }
 
 

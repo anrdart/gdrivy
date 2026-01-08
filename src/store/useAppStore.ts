@@ -10,8 +10,7 @@ import type {
 import { LinkParserService } from '../services/linkParser'
 import { getAuthService, type GoogleUser, type AuthError } from '../services/authService'
 import { isLoginRequiredError } from '../services/errorHandler'
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || ''
+import api from '../lib/api'
 
 interface AppState {
   // Current input
@@ -88,21 +87,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
-  // Fetch metadata from API
+  // Fetch metadata from API using axios
   fetchMetadata: async (id: string, type: 'file' | 'folder') => {
     set({ isLoadingMetadata: true, metadataError: null, metadataErrorCode: null, requiresLoginForAccess: false })
 
     try {
       const endpoint = type === 'folder' 
-        ? `${API_BASE_URL}/api/folder/${id}/files`
-        : `${API_BASE_URL}/api/metadata/${id}`
+        ? `/api/folder/${id}/files`
+        : `/api/metadata/${id}`
 
-      const response = await fetch(endpoint, {
-        credentials: 'include', // Include cookies for authenticated requests
-      })
-      const data = await response.json()
+      const { data } = await api.get(endpoint)
 
-      if (!response.ok || !data.success) {
+      if (!data.success) {
         const errorCode = data.error?.code as ErrorCode | undefined
         const requiresLogin = errorCode ? isLoginRequiredError(errorCode) : false
         throw { 
@@ -126,10 +122,27 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ metadata: data.data, isLoadingMetadata: false })
       }
     } catch (error) {
-      const typedError = error as { message?: string; code?: ErrorCode; requiresLogin?: boolean }
-      const errorMessage = typedError.message || 'Unknown error occurred'
-      const errorCode = typedError.code || null
-      const requiresLogin = typedError.requiresLogin || false
+      // Handle axios errors
+      let errorMessage = 'Unknown error occurred'
+      let errorCode: ErrorCode | null = null
+      let requiresLogin = false
+
+      if (error && typeof error === 'object') {
+        // Check if it's an axios error with response
+        if ('response' in error) {
+          const axiosError = error as { response?: { data?: { error?: { code?: string; message?: string } } } }
+          errorCode = axiosError.response?.data?.error?.code as ErrorCode || null
+          errorMessage = axiosError.response?.data?.error?.message || errorMessage
+          requiresLogin = errorCode ? isLoginRequiredError(errorCode) : false
+        } else if ('message' in error) {
+          // Regular error object
+          const typedError = error as { message?: string; code?: ErrorCode; requiresLogin?: boolean }
+          errorMessage = typedError.message || errorMessage
+          errorCode = typedError.code || null
+          requiresLogin = typedError.requiresLogin || false
+        }
+      }
+
       set({ 
         metadataError: errorMessage, 
         metadataErrorCode: errorCode,

@@ -12,6 +12,7 @@ import { authRouter } from './routes/auth.js'
 import { errorHandler } from './middleware/errorHandler.js'
 
 const app = express()
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001
 
 // CORS configuration for Google Drive API proxy
@@ -30,14 +31,14 @@ app.use(express.json())
 
 // Session configuration - tokens stored server-side, not in localStorage
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
+  secret: process.env.SESSION_SECRET || 'rahasia',
   resave: false,
   saveUninitialized: false,
+  proxy: true,
   name: 'gdrive.sid',
   cookie: {
     secure: process.env.NODE_ENV === 'production', // HTTPS only in production
-    httpOnly: true, // Prevent XSS access to cookie
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    maxAge: 24 * 60 * 60 * 1000,
     sameSite: 'lax', // CSRF protection
   },
 }))

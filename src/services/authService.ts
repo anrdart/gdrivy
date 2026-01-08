@@ -7,10 +7,10 @@
  * Requirements: 1.1, 2.4, 6.1, 6.2, 6.3, 6.4
  */
 
+import { AxiosError } from 'axios'
+import api from '../lib/api'
 import { AuthErrorCode } from '../types'
 import { parseAuthErrorCode, createAuthError } from './errorHandler'
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 
 export interface GoogleUser {
   id: string
@@ -28,6 +28,10 @@ export interface AuthResponse {
   }
 }
 
+interface InitiateLoginResponse {
+  authUrl?: string
+}
+
 export interface AuthError {
   code: AuthErrorCode
   message: string
@@ -37,15 +41,21 @@ export interface AuthError {
 }
 
 /**
+ * Type guard to check if an error is an AuthError
+ */
+function isAuthError(error: unknown): error is AuthError {
+  return (
+    error !== null &&
+    typeof error === 'object' &&
+    'code' in error &&
+    Object.values(AuthErrorCode).includes((error as AuthError).code)
+  )
+}
+
+/**
  * AuthService class for handling Google OAuth authentication
  */
 export class AuthService {
-  private baseUrl: string
-
-  constructor(baseUrl: string = API_BASE_URL) {
-    this.baseUrl = baseUrl
-  }
-
   /**
    * Initiate login - redirects to Google OAuth consent screen
    * Requirements: 1.1
@@ -53,20 +63,7 @@ export class AuthService {
    */
   async initiateLogin(): Promise<void> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/auth/google`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (!response.ok) {
-        await response.json().catch(() => ({}))
-        throw createAuthError(AuthErrorCode.AUTH_FAILED)
-      }
-
-      const data = await response.json()
+      const { data } = await api.post<InitiateLoginResponse>('/api/auth/google')
       
       if (data.authUrl) {
         // Redirect to Google OAuth consent screen
@@ -75,14 +72,7 @@ export class AuthService {
         throw createAuthError(AuthErrorCode.AUTH_FAILED)
       }
     } catch (error) {
-      // Check if it's already an AuthError
-      if (error && typeof error === 'object' && 'code' in error) {
-        const authError = error as AuthError
-        if (Object.values(AuthErrorCode).includes(authError.code)) {
-          throw error
-        }
-      }
-      // Network error
+      if (isAuthError(error)) throw error
       console.error('Login initiation error:', error)
       throw createAuthError(AuthErrorCode.NETWORK_ERROR)
     }
@@ -131,25 +121,9 @@ export class AuthService {
    */
   async logout(): Promise<void> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/auth/logout`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (!response.ok) {
-        throw createAuthError(AuthErrorCode.NETWORK_ERROR)
-      }
+      await api.post('/api/auth/logout')
     } catch (error) {
-      // Check if it's already an AuthError
-      if (error && typeof error === 'object' && 'code' in error) {
-        const authError = error as AuthError
-        if (Object.values(AuthErrorCode).includes(authError.code)) {
-          throw error
-        }
-      }
+      if (isAuthError(error)) throw error
       console.error('Logout error:', error)
       throw createAuthError(AuthErrorCode.NETWORK_ERROR)
     }
@@ -158,30 +132,16 @@ export class AuthService {
   /**
    * Check current authentication status
    * Returns the current user if authenticated, null otherwise
-   * Throws SESSION_EXPIRED if session is invalid
    */
   async checkAuth(): Promise<GoogleUser | null> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/auth/me`, {
-        method: 'GET',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (response.status === 401) {
-        // Not authenticated
-        return null
-      }
-
-      if (!response.ok) {
-        return null
-      }
-
-      const data: AuthResponse = await response.json()
+      const { data } = await api.get<AuthResponse>('/api/auth/me')
       return data.user || null
     } catch (error) {
+      // 401 means not authenticated - this is expected
+      if (error instanceof AxiosError && error.response?.status === 401) {
+        return null
+      }
       console.error('Auth check error:', error)
       return null
     }
@@ -195,28 +155,13 @@ export class AuthService {
    */
   async refreshToken(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/auth/refresh`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (response.status === 401) {
-        // Session expired, need to re-login
+      await api.post('/api/auth/refresh')
+      return true
+    } catch (error) {
+      if (error instanceof AxiosError && error.response?.status === 401) {
         throw createAuthError(AuthErrorCode.SESSION_EXPIRED)
       }
-
-      return response.ok
-    } catch (error) {
-      // Check if it's already an AuthError
-      if (error && typeof error === 'object' && 'code' in error) {
-        const authError = error as AuthError
-        if (Object.values(AuthErrorCode).includes(authError.code)) {
-          throw error
-        }
-      }
+      if (isAuthError(error)) throw error
       console.error('Token refresh error:', error)
       throw createAuthError(AuthErrorCode.NETWORK_ERROR)
     }
@@ -250,6 +195,6 @@ export function getAuthService(): AuthService {
 /**
  * Create a new AuthService instance (useful for testing)
  */
-export function createAuthService(baseUrl?: string): AuthService {
-  return new AuthService(baseUrl)
+export function createAuthService(): AuthService {
+  return new AuthService()
 }
