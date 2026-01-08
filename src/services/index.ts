@@ -27,3 +27,11 @@ export {
   createRetryManager,
   type RetryResult 
 } from './retryManager'
+export {
+  AuthService,
+  getAuthService,
+  createAuthService,
+  type GoogleUser,
+  type AuthResponse,
+  type AuthError
+} from './authService'

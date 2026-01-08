@@ -1,4 +1,4 @@
-import { google } from 'googleapis'
+import { google, Auth } from 'googleapis'
 import type { drive_v3 } from 'googleapis'
 
 // Error codes matching the design document
@@ -10,6 +10,11 @@ export enum ErrorCode {
   NETWORK_ERROR = 'NETWORK_ERROR',
   DOWNLOAD_FAILED = 'DOWNLOAD_FAILED',
   API_ERROR = 'API_ERROR',
+}
+
+export interface GoogleDriveServiceOptions {
+  apiKey?: string
+  accessToken?: string
 }
 
 export interface FileMetadata {
@@ -42,18 +47,32 @@ export class GoogleDriveError extends Error {
 
 export class GoogleDriveService {
   private drive: drive_v3.Drive
+  private oauth2Client: Auth.OAuth2Client | null = null
 
-  constructor(apiKey?: string) {
-    const key = apiKey || process.env.GOOGLE_API_KEY
-    
-    if (!key) {
-      console.warn('Warning: GOOGLE_API_KEY not set. API calls will fail.')
+  constructor(options: GoogleDriveServiceOptions = {}) {
+    const apiKey = options.apiKey || process.env.GOOGLE_API_KEY
+    const accessToken = options.accessToken
+
+    // If user access token is provided, use OAuth2 client
+    if (accessToken) {
+      this.oauth2Client = new google.auth.OAuth2()
+      this.oauth2Client.setCredentials({ access_token: accessToken })
+      
+      this.drive = google.drive({
+        version: 'v3',
+        auth: this.oauth2Client,
+      })
+    } else {
+      // Fallback to API key for public files
+      if (!apiKey) {
+        console.warn('Warning: GOOGLE_API_KEY not set. API calls will fail.')
+      }
+
+      this.drive = google.drive({
+        version: 'v3',
+        auth: apiKey,
+      })
     }
-
-    this.drive = google.drive({
-      version: 'v3',
-      auth: key,
-    })
   }
 
   /**
@@ -147,20 +166,33 @@ export class GoogleDriveService {
 
   /**
    * Get a readable stream for downloading a file
+   * Optimized: If metadata is provided, skip the metadata fetch
    */
-  async getFileStream(fileId: string): Promise<{
+  async getFileStream(fileId: string, knownMetadata?: { name: string; mimeType: string; size: number }): Promise<{
     stream: import('stream').Readable
     metadata: FileMetadata
   }> {
     try {
-      // First get metadata to know file info
-      const metadataResponse = await this.drive.files.get({
-        fileId,
-        fields: 'id, name, mimeType, size, modifiedTime',
-        supportsAllDrives: true,
-      })
+      let file: { id: string; name: string; mimeType: string; size: string; modifiedTime?: string }
 
-      const file = metadataResponse.data
+      // If metadata is provided and it's not a Google Doc, skip metadata fetch
+      if (knownMetadata && !knownMetadata.mimeType.startsWith('application/vnd.google-apps.')) {
+        file = {
+          id: fileId,
+          name: knownMetadata.name,
+          mimeType: knownMetadata.mimeType,
+          size: knownMetadata.size.toString(),
+          modifiedTime: new Date().toISOString(),
+        }
+      } else {
+        // Fetch metadata if not provided or if it's a Google Doc (need to check mimeType)
+        const metadataResponse = await this.drive.files.get({
+          fileId,
+          fields: 'id, name, mimeType, size, modifiedTime',
+          supportsAllDrives: true,
+        })
+        file = metadataResponse.data as typeof file
+      }
 
       if (!file.id || !file.name) {
         throw new GoogleDriveError(
@@ -229,26 +261,26 @@ export class GoogleDriveService {
    * Handle Google API errors and convert to our error types
    */
   private handleApiError(error: unknown): GoogleDriveError {
-    // --- DEBUG LOGGING ---
-    console.error("🔥🔥🔥 DEBUG ERROR GOOGLE:", error);
-    const anyError = error as any;
-    if (anyError.response) {
-      console.error("📦 DATA DARI GOOGLE:", JSON.stringify(anyError.response.data, null, 2));
-    }
-    // ---------------------
-
     if (error instanceof GoogleDriveError) {
       return error
     }
 
-    const gaxiosError = error as { code?: number; message?: string; errors?: Array<{ reason?: string }> }
-    const statusCode = gaxiosError.code || 500
+    const gaxiosError = error as { 
+      code?: number
+      message?: string
+      errors?: Array<{ reason?: string }>
+      response?: { data?: { error?: { code?: number; message?: string } } }
+    }
+    
+    const statusCode = gaxiosError.code || gaxiosError.response?.data?.error?.code || 500
     const reason = gaxiosError.errors?.[0]?.reason
 
     switch (statusCode) {
       case 404:
+        // Google returns 404 for both non-existent AND private files when using API key
+        // We'll return a message that covers both cases
         return new GoogleDriveError(
-          'File tidak ditemukan atau sudah dihapus.',
+          'File tidak ditemukan. File mungkin sudah dihapus atau bersifat private.',
           ErrorCode.FILE_NOT_FOUND,
           404
         )
@@ -267,7 +299,7 @@ export class GoogleDriveService {
         )
       case 401:
         return new GoogleDriveError(
-          'API key tidak valid atau tidak memiliki izin.',
+          'Sesi login telah berakhir. Silakan login ulang.',
           ErrorCode.ACCESS_DENIED,
           401
         )
@@ -281,10 +313,21 @@ export class GoogleDriveService {
   }
 }
 
-// Singleton instance
+// Singleton instance for API key based access (public files)
 let driveServiceInstance: GoogleDriveService | null = null
 
-export function getGoogleDriveService(): GoogleDriveService {
+/**
+ * Get GoogleDriveService instance
+ * - Without accessToken: returns singleton for public file access (API key)
+ * - With accessToken: returns new instance for authenticated user access
+ */
+export function getGoogleDriveService(accessToken?: string): GoogleDriveService {
+  // If user token provided, create new instance for authenticated access
+  if (accessToken) {
+    return new GoogleDriveService({ accessToken })
+  }
+  
+  // Otherwise use singleton for API key based access
   if (!driveServiceInstance) {
     driveServiceInstance = new GoogleDriveService()
   }

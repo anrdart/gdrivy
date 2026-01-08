@@ -1,19 +1,22 @@
+// Load .env first before any other imports that might use env vars
+import dotenv from 'dotenv'
+dotenv.config()
+
 import express from 'express'
 import cors from 'cors'
-import dotenv from 'dotenv'
+import session from 'express-session'
 import { metadataRouter } from './routes/metadata.js'
 import { downloadRouter } from './routes/download.js'
 import { folderRouter } from './routes/folder.js'
+import { authRouter } from './routes/auth.js'
 import { errorHandler } from './middleware/errorHandler.js'
-
-dotenv.config()
 
 const app = express()
 const PORT = process.env.PORT || 3001
 
 // CORS configuration for Google Drive API proxy
 const corsOptions: cors.CorsOptions = {
-  origin: 'http://localhost:5173',
+  origin: process.env.CORS_ORIGIN?.split(',') || 'http://localhost:5173',
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   exposedHeaders: ['Content-Length', 'Content-Disposition', 'X-Download-Progress'],
@@ -25,7 +28,22 @@ const corsOptions: cors.CorsOptions = {
 app.use(cors(corsOptions))
 app.use(express.json())
 
+// Session configuration - tokens stored server-side, not in localStorage
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  name: 'gdrive.sid',
+  cookie: {
+    secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+    httpOnly: true, // Prevent XSS access to cookie
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    sameSite: 'lax', // CSRF protection
+  },
+}))
+
 // Routes
+app.use('/api/auth', authRouter)
 app.use('/api/metadata', metadataRouter)
 app.use('/api/download', downloadRouter)
 app.use('/api/folder', folderRouter)

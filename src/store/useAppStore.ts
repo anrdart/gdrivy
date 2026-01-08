@@ -3,9 +3,13 @@ import type {
   ParsedLink, 
   FileMetadata, 
   FolderMetadata, 
-  DownloadProgress 
+  DownloadProgress,
+  ErrorCode,
+  AuthErrorCode 
 } from '../types'
 import { LinkParserService } from '../services/linkParser'
+import { getAuthService, type GoogleUser, type AuthError } from '../services/authService'
+import { isLoginRequiredError } from '../services/errorHandler'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 
@@ -18,9 +22,18 @@ interface AppState {
   metadata: FileMetadata | FolderMetadata | null
   isLoadingMetadata: boolean
   metadataError: string | null
+  metadataErrorCode: ErrorCode | null
+  requiresLoginForAccess: boolean
 
   // Downloads
   downloads: Map<string, DownloadProgress>
+
+  // Auth state (Requirements: 2.1, 2.4, 6.1, 6.2, 6.3, 6.4)
+  user: GoogleUser | null
+  isAuthenticated: boolean
+  isAuthLoading: boolean
+  authError: string | null
+  authErrorCode: AuthErrorCode | null
 
   // Actions
   setLink: (link: string) => void
@@ -30,9 +43,17 @@ interface AppState {
   retryDownload: (fileId: string) => void
   clearCompleted: () => void
   updateDownloadProgress: (fileId: string, progress: Partial<DownloadProgress>) => void
+  clearMetadataError: () => void
   
   // Helper for calculating folder progress
   calculateFolderProgress: (fileIds: string[]) => number
+
+  // Auth actions (Requirements: 2.1, 2.4)
+  login: () => Promise<void>
+  logout: () => Promise<void>
+  checkAuth: () => Promise<void>
+  handleAuthCallback: () => Promise<void>
+  clearAuthError: () => void
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -42,7 +63,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   metadata: null,
   isLoadingMetadata: false,
   metadataError: null,
+  metadataErrorCode: null,
+  requiresLoginForAccess: false,
   downloads: new Map(),
+
+  // Auth initial state (Requirements: 2.1, 2.4, 6.1, 6.2, 6.3, 6.4)
+  user: null,
+  isAuthenticated: false,
+  isAuthLoading: false,
+  authError: null,
+  authErrorCode: null,
 
   // Set link and automatically parse it
   setLink: (link: string) => {
@@ -53,23 +83,33 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Clear previous metadata when link changes
       metadata: null,
       metadataError: null,
+      metadataErrorCode: null,
+      requiresLoginForAccess: false,
     })
   },
 
   // Fetch metadata from API
   fetchMetadata: async (id: string, type: 'file' | 'folder') => {
-    set({ isLoadingMetadata: true, metadataError: null })
+    set({ isLoadingMetadata: true, metadataError: null, metadataErrorCode: null, requiresLoginForAccess: false })
 
     try {
       const endpoint = type === 'folder' 
         ? `${API_BASE_URL}/api/folder/${id}/files`
         : `${API_BASE_URL}/api/metadata/${id}`
 
-      const response = await fetch(endpoint)
+      const response = await fetch(endpoint, {
+        credentials: 'include', // Include cookies for authenticated requests
+      })
       const data = await response.json()
 
       if (!response.ok || !data.success) {
-        throw new Error(data.error?.message || 'Failed to fetch metadata')
+        const errorCode = data.error?.code as ErrorCode | undefined
+        const requiresLogin = errorCode ? isLoginRequiredError(errorCode) : false
+        throw { 
+          message: data.error?.message || 'Failed to fetch metadata',
+          code: errorCode,
+          requiresLogin,
+        }
       }
 
       // Transform folder response to FolderMetadata format
@@ -86,9 +126,22 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ metadata: data.data, isLoadingMetadata: false })
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
-      set({ metadataError: errorMessage, isLoadingMetadata: false })
+      const typedError = error as { message?: string; code?: ErrorCode; requiresLogin?: boolean }
+      const errorMessage = typedError.message || 'Unknown error occurred'
+      const errorCode = typedError.code || null
+      const requiresLogin = typedError.requiresLogin || false
+      set({ 
+        metadataError: errorMessage, 
+        metadataErrorCode: errorCode,
+        requiresLoginForAccess: requiresLogin,
+        isLoadingMetadata: false,
+      })
     }
+  },
+
+  // Clear metadata error
+  clearMetadataError: () => {
+    set({ metadataError: null, metadataErrorCode: null, requiresLoginForAccess: false })
   },
 
   // Start a download
@@ -207,6 +260,109 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     return totalProgress / fileIds.length
+  },
+
+  // Auth Actions (Requirements: 2.1, 2.4, 6.1, 6.2, 6.3, 6.4)
+
+  /**
+   * Initiate login - redirects to Google OAuth
+   */
+  login: async () => {
+    set({ isAuthLoading: true, authError: null, authErrorCode: null })
+    try {
+      const authService = getAuthService()
+      await authService.initiateLogin()
+      // Note: This will redirect, so we won't reach here
+    } catch (error) {
+      const authError = error as AuthError
+      const errorMessage = authError.message || 'Login failed'
+      const errorCode = authError.code || null
+      set({ isAuthLoading: false, authError: errorMessage, authErrorCode: errorCode })
+    }
+  },
+
+  /**
+   * Logout - clear session and all auth data
+   * Property 2: Logout Clears All Auth Data
+   */
+  logout: async () => {
+    set({ isAuthLoading: true, authError: null, authErrorCode: null })
+    try {
+      const authService = getAuthService()
+      await authService.logout()
+      // Clear all auth state
+      set({
+        user: null,
+        isAuthenticated: false,
+        isAuthLoading: false,
+        authError: null,
+        authErrorCode: null,
+      })
+    } catch (error) {
+      const authError = error as AuthError
+      const errorMessage = authError.message || 'Logout failed'
+      const errorCode = authError.code || null
+      set({ isAuthLoading: false, authError: errorMessage, authErrorCode: errorCode })
+    }
+  },
+
+  /**
+   * Check current authentication status
+   */
+  checkAuth: async () => {
+    set({ isAuthLoading: true })
+    try {
+      const authService = getAuthService()
+      const user = await authService.checkAuth()
+      set({
+        user,
+        isAuthenticated: user !== null,
+        isAuthLoading: false,
+      })
+    } catch (error) {
+      set({
+        user: null,
+        isAuthenticated: false,
+        isAuthLoading: false,
+      })
+    }
+  },
+
+  /**
+   * Handle OAuth callback after redirect
+   * Requirements: 6.1, 6.2
+   */
+  handleAuthCallback: async () => {
+    set({ isAuthLoading: true, authError: null, authErrorCode: null })
+    try {
+      const authService = getAuthService()
+      const user = await authService.handleCallback()
+      if (user) {
+        set({
+          user,
+          isAuthenticated: true,
+          isAuthLoading: false,
+        })
+      } else {
+        set({ isAuthLoading: false })
+      }
+    } catch (error) {
+      const authError = error as AuthError
+      const errorMessage = authError.message || 'Authentication failed'
+      const errorCode = authError.code || null
+      set({
+        isAuthLoading: false,
+        authError: errorMessage,
+        authErrorCode: errorCode,
+      })
+    }
+  },
+
+  /**
+   * Clear auth error
+   */
+  clearAuthError: () => {
+    set({ authError: null, authErrorCode: null })
   },
 }))
 

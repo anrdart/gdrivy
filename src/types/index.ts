@@ -52,6 +52,22 @@ export enum ErrorCode {
   API_ERROR = 'API_ERROR',
 }
 
+// Auth Error Types (Requirements: 6.1, 6.2, 6.3, 6.4)
+export enum AuthErrorCode {
+  AUTH_CANCELLED = 'AUTH_CANCELLED',
+  AUTH_FAILED = 'AUTH_FAILED',
+  NETWORK_ERROR = 'NETWORK_ERROR',
+  SESSION_EXPIRED = 'SESSION_EXPIRED',
+}
+
+export interface AuthError {
+  code: AuthErrorCode
+  message: string
+  suggestion?: string
+  canRetry?: boolean
+  requiresReLogin?: boolean
+}
+
 export interface AppError {
   code: ErrorCode
   message: string

@@ -12,6 +12,15 @@ const mockFetch = vi.fn()
 ;(globalThis as typeof globalThis & { URL: typeof URL }).URL.createObjectURL = vi.fn(() => 'blob:mock-url')
 ;(globalThis as typeof globalThis & { URL: typeof URL }).URL.revokeObjectURL = vi.fn()
 
+// Helper to create mock auth response (not authenticated)
+const mockAuthResponse = () => ({
+  ok: false,
+  status: 401,
+  json: () => Promise.resolve({
+    error: { code: 'NOT_AUTHENTICATED', message: 'Not authenticated' }
+  }),
+})
+
 // Reset store before each test
 beforeEach(() => {
   useAppStore.setState({
@@ -20,9 +29,22 @@ beforeEach(() => {
     metadata: null,
     isLoadingMetadata: false,
     metadataError: null,
+    metadataErrorCode: null,
+    requiresLoginForAccess: false,
     downloads: new Map(),
+    user: null,
+    isAuthenticated: false,
+    isAuthLoading: false,
+    authError: null,
   })
   mockFetch.mockReset()
+  // Default mock for auth check - return not authenticated
+  mockFetch.mockImplementation((url: string) => {
+    if (url.includes('/api/auth/me')) {
+      return Promise.resolve(mockAuthResponse())
+    }
+    return Promise.reject(new Error(`Unhandled fetch: ${url}`))
+  })
 })
 
 afterEach(() => {
@@ -95,19 +117,27 @@ describe('App Integration - Metadata Fetch Flow', () => {
   it('fetches and displays file metadata on valid link submission', async () => {
     const user = userEvent.setup()
     
-    // Mock successful metadata response
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({
-        success: true,
-        data: {
-          id: 'abc123',
-          name: 'test-file.pdf',
-          mimeType: 'application/pdf',
-          size: 1024000,
-          modifiedTime: '2024-01-01T00:00:00Z',
-        },
-      }),
+    // Mock both auth and metadata responses
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/api/auth/me')) {
+        return Promise.resolve(mockAuthResponse())
+      }
+      if (url.includes('/api/metadata/')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            success: true,
+            data: {
+              id: 'abc123',
+              name: 'test-file.pdf',
+              mimeType: 'application/pdf',
+              size: 1024000,
+              modifiedTime: '2024-01-01T00:00:00Z',
+            },
+          }),
+        })
+      }
+      return Promise.reject(new Error(`Unhandled fetch: ${url}`))
     })
     
     render(<App />)
@@ -130,16 +160,24 @@ describe('App Integration - Metadata Fetch Flow', () => {
   it('displays error message when metadata fetch fails', async () => {
     const user = userEvent.setup()
     
-    // Mock failed metadata response
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      json: () => Promise.resolve({
-        success: false,
-        error: {
-          code: 'FILE_NOT_FOUND',
-          message: 'File tidak ditemukan',
-        },
-      }),
+    // Mock both auth and failed metadata responses
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/api/auth/me')) {
+        return Promise.resolve(mockAuthResponse())
+      }
+      if (url.includes('/api/metadata/')) {
+        return Promise.resolve({
+          ok: false,
+          json: () => Promise.resolve({
+            success: false,
+            error: {
+              code: 'FILE_NOT_FOUND',
+              message: 'File tidak ditemukan',
+            },
+          }),
+        })
+      }
+      return Promise.reject(new Error(`Unhandled fetch: ${url}`))
     })
     
     render(<App />)
@@ -159,24 +197,30 @@ describe('App Integration - Metadata Fetch Flow', () => {
   it('shows loading state while fetching metadata', async () => {
     const user = userEvent.setup()
     
-    // Mock slow metadata response
-    mockFetch.mockImplementationOnce(() => 
-      new Promise(resolve => 
-        setTimeout(() => resolve({
-          ok: true,
-          json: () => Promise.resolve({
-            success: true,
-            data: {
-              id: 'abc123',
-              name: 'test-file.pdf',
-              mimeType: 'application/pdf',
-              size: 1024000,
-              modifiedTime: '2024-01-01T00:00:00Z',
-            },
-          }),
-        }), 100)
-      )
-    )
+    // Mock auth and slow metadata response
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/api/auth/me')) {
+        return Promise.resolve(mockAuthResponse())
+      }
+      if (url.includes('/api/metadata/')) {
+        return new Promise(resolve => 
+          setTimeout(() => resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              success: true,
+              data: {
+                id: 'abc123',
+                name: 'test-file.pdf',
+                mimeType: 'application/pdf',
+                size: 1024000,
+                modifiedTime: '2024-01-01T00:00:00Z',
+              },
+            }),
+          }), 100)
+        )
+      }
+      return Promise.reject(new Error(`Unhandled fetch: ${url}`))
+    })
     
     render(<App />)
     
@@ -195,20 +239,28 @@ describe('App Integration - Folder Metadata Flow', () => {
   it('fetches and displays folder metadata with file list', async () => {
     const user = userEvent.setup()
     
-    // Mock successful folder metadata response
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({
-        success: true,
-        data: {
-          folderId: 'folder123',
-          folderName: 'My Folder',
-          files: [
-            { id: 'file1', name: 'document.pdf', mimeType: 'application/pdf', size: 1024, modifiedTime: '2024-01-01' },
-            { id: 'file2', name: 'image.jpg', mimeType: 'image/jpeg', size: 2048, modifiedTime: '2024-01-02' },
-          ],
-        },
-      }),
+    // Mock both auth and folder metadata responses
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/api/auth/me')) {
+        return Promise.resolve(mockAuthResponse())
+      }
+      if (url.includes('/api/folder/')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            success: true,
+            data: {
+              folderId: 'folder123',
+              folderName: 'My Folder',
+              files: [
+                { id: 'file1', name: 'document.pdf', mimeType: 'application/pdf', size: 1024, modifiedTime: '2024-01-01' },
+                { id: 'file2', name: 'image.jpg', mimeType: 'image/jpeg', size: 2048, modifiedTime: '2024-01-02' },
+              ],
+            },
+          }),
+        })
+      }
+      return Promise.reject(new Error(`Unhandled fetch: ${url}`))
     })
     
     render(<App />)
@@ -234,8 +286,16 @@ describe('App Integration - Error Scenarios', () => {
   it('handles network errors gracefully', async () => {
     const user = userEvent.setup()
     
-    // Mock network error
-    mockFetch.mockRejectedValueOnce(new Error('Network error'))
+    // Mock auth success but network error for metadata
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/api/auth/me')) {
+        return Promise.resolve(mockAuthResponse())
+      }
+      if (url.includes('/api/metadata/')) {
+        return Promise.reject(new Error('Network error'))
+      }
+      return Promise.reject(new Error(`Unhandled fetch: ${url}`))
+    })
     
     render(<App />)
     
@@ -254,17 +314,25 @@ describe('App Integration - Error Scenarios', () => {
   it('handles access denied errors', async () => {
     const user = userEvent.setup()
     
-    // Mock access denied response
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 403,
-      json: () => Promise.resolve({
-        success: false,
-        error: {
-          code: 'ACCESS_DENIED',
-          message: 'Access denied',
-        },
-      }),
+    // Mock auth and access denied response
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/api/auth/me')) {
+        return Promise.resolve(mockAuthResponse())
+      }
+      if (url.includes('/api/metadata/')) {
+        return Promise.resolve({
+          ok: false,
+          status: 403,
+          json: () => Promise.resolve({
+            success: false,
+            error: {
+              code: 'ACCESS_DENIED',
+              message: 'Access denied',
+            },
+          }),
+        })
+      }
+      return Promise.reject(new Error(`Unhandled fetch: ${url}`))
     })
     
     render(<App />)
@@ -275,9 +343,9 @@ describe('App Integration - Error Scenarios', () => {
     const button = screen.getByRole('button', { name: /fetch file info/i })
     await user.click(button)
     
-    // Wait for error to be displayed
+    // Wait for login prompt to be displayed (ACCESS_DENIED shows LoginPrompt)
     await waitFor(() => {
-      expect(screen.getByText(/error/i)).toBeInTheDocument()
+      expect(screen.getByText(/file private/i)).toBeInTheDocument()
     })
   })
 })
@@ -286,19 +354,27 @@ describe('App Integration - Download Flow', () => {
   it('shows download button after metadata is fetched', async () => {
     const user = userEvent.setup()
     
-    // Mock successful metadata response
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({
-        success: true,
-        data: {
-          id: 'abc123',
-          name: 'test-file.pdf',
-          mimeType: 'application/pdf',
-          size: 1024000,
-          modifiedTime: '2024-01-01T00:00:00Z',
-        },
-      }),
+    // Mock both auth and metadata responses
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/api/auth/me')) {
+        return Promise.resolve(mockAuthResponse())
+      }
+      if (url.includes('/api/metadata/')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            success: true,
+            data: {
+              id: 'abc123',
+              name: 'test-file.pdf',
+              mimeType: 'application/pdf',
+              size: 1024000,
+              modifiedTime: '2024-01-01T00:00:00Z',
+            },
+          }),
+        })
+      }
+      return Promise.reject(new Error(`Unhandled fetch: ${url}`))
     })
     
     render(<App />)
@@ -318,19 +394,27 @@ describe('App Integration - Download Flow', () => {
   it('shows download all files button for folders', async () => {
     const user = userEvent.setup()
     
-    // Mock successful folder metadata response
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({
-        success: true,
-        data: {
-          folderId: 'folder123',
-          folderName: 'My Folder',
-          files: [
-            { id: 'file1', name: 'document.pdf', mimeType: 'application/pdf', size: 1024, modifiedTime: '2024-01-01' },
-          ],
-        },
-      }),
+    // Mock both auth and folder metadata responses
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/api/auth/me')) {
+        return Promise.resolve(mockAuthResponse())
+      }
+      if (url.includes('/api/folder/')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            success: true,
+            data: {
+              folderId: 'folder123',
+              folderName: 'My Folder',
+              files: [
+                { id: 'file1', name: 'document.pdf', mimeType: 'application/pdf', size: 1024, modifiedTime: '2024-01-01' },
+              ],
+            },
+          }),
+        })
+      }
+      return Promise.reject(new Error(`Unhandled fetch: ${url}`))
     })
     
     render(<App />)

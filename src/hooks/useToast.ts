@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import type { ToastMessage, ToastType } from '../components/Toast'
-import { ErrorCode } from '../types'
-import { getErrorMessage } from '../services/errorHandler'
+import { ErrorCode, AuthErrorCode } from '../types'
+import { getErrorMessage, getAuthErrorMessage } from '../services/errorHandler'
 
 let toastIdCounter = 0
 
@@ -93,6 +93,48 @@ export function useToast() {
   }, [addToast])
 
   /**
+   * Show auth error toast from AuthErrorCode
+   * Uses the auth error message mapping from errorHandler
+   * Requirements: 6.1, 6.2, 6.3, 6.4
+   */
+  const showAuthError = useCallback((code: AuthErrorCode) => {
+    const { message, suggestion } = getAuthErrorMessage(code)
+    return addToast('error', message, { suggestion, duration: 8000 })
+  }, [addToast])
+
+  /**
+   * Show login cancelled toast
+   * Requirements: 6.1
+   */
+  const showLoginCancelled = useCallback(() => {
+    return showAuthError(AuthErrorCode.AUTH_CANCELLED)
+  }, [showAuthError])
+
+  /**
+   * Show auth failed toast with retry option
+   * Requirements: 6.2
+   */
+  const showAuthFailed = useCallback(() => {
+    return showAuthError(AuthErrorCode.AUTH_FAILED)
+  }, [showAuthError])
+
+  /**
+   * Show network error during auth toast
+   * Requirements: 6.3
+   */
+  const showAuthNetworkError = useCallback(() => {
+    return showAuthError(AuthErrorCode.NETWORK_ERROR)
+  }, [showAuthError])
+
+  /**
+   * Show session expired toast with re-login prompt
+   * Requirements: 6.4
+   */
+  const showSessionExpired = useCallback(() => {
+    return showAuthError(AuthErrorCode.SESSION_EXPIRED)
+  }, [showAuthError])
+
+  /**
    * Show warning toast
    */
   const showWarning = useCallback((title: string, message?: string) => {
@@ -132,6 +174,11 @@ export function useToast() {
     showSuccess,
     showError,
     showErrorFromCode,
+    showAuthError,
+    showLoginCancelled,
+    showAuthFailed,
+    showAuthNetworkError,
+    showSessionExpired,
     showWarning,
     showInfo,
     showDownloadComplete,

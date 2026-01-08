@@ -1,10 +1,10 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useAppStore } from './store/useAppStore'
 import { LinkInput } from './components/LinkInput'
 import { FilePreview } from './components/FilePreview'
 import { DownloadProgress } from './components/DownloadProgress'
 import { DownloadQueue } from './components/DownloadQueue'
-import { FilePreviewSkeleton, ToastContainer, ErrorBoundary } from './components'
+import { FilePreviewSkeleton, ToastContainer, ErrorBoundary, AuthButton, LoginPrompt } from './components'
 import { useToast } from './hooks/useToast'
 import { getDownloadService } from './services/downloadService'
 import type { FileMetadata, FolderMetadata, DownloadProgress as DownloadProgressType, QueueItem } from './types'
@@ -31,7 +31,9 @@ function App() {
     metadata,
     isLoadingMetadata,
     metadataError,
+    requiresLoginForAccess,
     downloads,
+    isAuthenticated,
     setLink,
     fetchMetadata,
     startDownload,
@@ -39,6 +41,9 @@ function App() {
     retryDownload,
     updateDownloadProgress,
     clearCompleted,
+    clearMetadataError,
+    checkAuth,
+    handleAuthCallback,
   } = useAppStore()
 
   const downloadService = getDownloadService()
@@ -50,6 +55,19 @@ function App() {
     showDownloadComplete,
     showDownloadFailed 
   } = useToast()
+
+  // Check auth status on mount and handle OAuth callback
+  // Requirements: 4.1, 4.2
+  useEffect(() => {
+    // Handle OAuth callback if present
+    const urlParams = new URLSearchParams(window.location.search)
+    if (urlParams.has('auth_success') || urlParams.has('auth_error')) {
+      handleAuthCallback()
+    } else {
+      // Check existing auth status
+      checkAuth()
+    }
+  }, [checkAuth, handleAuthCallback])
 
   // Handle link submission from LinkInput
   const handleLinkSubmit = useCallback(async (link: string) => {
@@ -87,7 +105,8 @@ function App() {
           (progress, speed) => {
             updateDownloadProgress(file.id, { progress, speed })
           },
-          file.name // Pass expected filename from metadata
+          file.name, // Pass expected filename from metadata
+          { mimeType: file.mimeType, size: file.size } // Pass metadata for faster download
         )
 
         if (result.success && result.blob) {
@@ -118,7 +137,8 @@ function App() {
         (progress, speed) => {
           updateDownloadProgress(fileId, { progress, speed })
         },
-        metadata.name // Pass expected filename from metadata
+        metadata.name, // Pass expected filename from metadata
+        { mimeType: metadata.mimeType, size: metadata.size } // Pass metadata for faster download
       )
 
       if (result.success && result.blob) {
@@ -231,6 +251,11 @@ function App() {
         <div className="relative container mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 max-w-4xl">
           {/* Header */}
           <header className="text-center mb-10 sm:mb-14 animate-fade-in">
+            {/* Auth Button - positioned top right */}
+            <div className="absolute top-4 right-4 sm:top-6 sm:right-6">
+              <AuthButton />
+            </div>
+
             <div className="inline-flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 mb-6 rounded-2xl bg-gradient-to-br from-primary-500 to-accent-500 shadow-glow">
               <svg className="w-8 h-8 sm:w-10 sm:h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
@@ -252,22 +277,29 @@ function App() {
             />
           </section>
 
-          {/* Error Message */}
+          {/* Error Message or Login Prompt */}
           {metadataError && (
             <section className="mb-8 animate-slide-up">
-              <div className="card bg-red-900/20 border border-red-500/30">
-                <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
-                    <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-red-400">Error</h3>
-                    <p className="text-red-300/80 text-sm mt-1">{metadataError}</p>
+              {requiresLoginForAccess && !isAuthenticated ? (
+                <LoginPrompt 
+                  message={metadataError}
+                  onDismiss={clearMetadataError}
+                />
+              ) : (
+                <div className="card bg-red-900/20 border border-red-500/30">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
+                      <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-red-400">Error</h3>
+                      <p className="text-red-300/80 text-sm mt-1">{metadataError}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </section>
           )}
 

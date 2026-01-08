@@ -1,8 +1,12 @@
 import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
 import { getGoogleDriveService, GoogleDriveError, ErrorCode } from '../services/googleDrive.js'
+import { extractUserToken } from '../middleware/auth.js'
 
 export const metadataRouter = Router()
+
+// Apply auth middleware to extract user token
+metadataRouter.use(extractUserToken)
 
 // GET /api/metadata/:fileId
 // Fetches file or folder metadata from Google Drive API v3
@@ -18,7 +22,8 @@ metadataRouter.get('/:fileId', async (req: Request, res: Response, next: NextFun
       )
     }
 
-    const driveService = getGoogleDriveService()
+    // Use user token if available, otherwise fallback to API key
+    const driveService = getGoogleDriveService(req.accessToken)
     const metadata = await driveService.getMetadata(fileId)
     
     res.json({

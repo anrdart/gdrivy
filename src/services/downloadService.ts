@@ -47,7 +47,9 @@ export class DownloadService {
       ? `${API_BASE_URL}/api/folder/${id}/files`
       : `${API_BASE_URL}/api/metadata/${id}`
 
-    const response = await fetch(endpoint)
+    const response = await fetch(endpoint, {
+      credentials: 'include', // Include cookies for authenticated requests (Requirements: 3.1, 3.2)
+    })
     const data = await response.json()
 
     if (!response.ok || !data.success) {
@@ -75,8 +77,18 @@ export class DownloadService {
    * @param fileId - Google Drive file ID
    * @param onProgress - Progress callback (progress: 0-100, speed: bytes/sec)
    * @param expectedFileName - Optional expected filename with extension (from metadata)
+   * @param fileMetadata - Optional file metadata to skip server-side metadata fetch
+   * 
+   * Requirements: 3.1, 3.2
+   * - WHEN a logged-in user pastes a private file link THEN the Google_Drive_Service SHALL use the user's access token to fetch metadata
+   * - WHEN a logged-in user downloads a private file THEN the Google_Drive_Service SHALL authenticate the request with the user's token
    */
-  async downloadFile(fileId: string, onProgress?: ProgressCallback, expectedFileName?: string): Promise<DownloadResult> {
+  async downloadFile(
+    fileId: string, 
+    onProgress?: ProgressCallback, 
+    expectedFileName?: string,
+    fileMetadata?: { mimeType: string; size: number }
+  ): Promise<DownloadResult> {
     const operationId = `download-${fileId}`
     
     // Create abort controller for this download
@@ -87,9 +99,27 @@ export class DownloadService {
       const result = await this.retryManager.executeWithRetry(
         operationId,
         async () => {
-          const response = await fetch(`${API_BASE_URL}/api/download/${fileId}`, {
+          // Build URL with optional metadata params for faster download
+          let url = `${API_BASE_URL}/api/download/${fileId}`
+          if (expectedFileName && fileMetadata) {
+            const params = new URLSearchParams({
+              name: expectedFileName,
+              mimeType: fileMetadata.mimeType,
+              size: fileMetadata.size.toString(),
+            })
+            url += `?${params.toString()}`
+          }
+          
+          const response = await fetch(url, {
             signal: abortController.signal,
+            credentials: 'include', // Include cookies for authenticated requests (Requirements: 3.1, 3.2)
           })
+
+          // Handle 401 Unauthorized - token may be expired or invalid
+          if (response.status === 401) {
+            const errorCode = ErrorCode.ACCESS_DENIED
+            throw createAppError(errorCode)
+          }
 
           if (!response.ok) {
             const errorCode = this.mapHttpErrorToCode(response.status)

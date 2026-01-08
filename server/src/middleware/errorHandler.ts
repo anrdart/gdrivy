@@ -13,12 +13,12 @@ const errorMessages: Record<string, { message: string; suggestion: string }> = {
     suggestion: 'Coba paste ulang link dari Google Drive',
   },
   [ErrorCode.FILE_NOT_FOUND]: {
-    message: 'File tidak ditemukan atau sudah dihapus.',
-    suggestion: 'Periksa kembali link atau hubungi pemilik file',
+    message: 'File tidak ditemukan. File mungkin sudah dihapus atau bersifat private.',
+    suggestion: 'Jika file bersifat private, coba login dengan akun Google yang memiliki akses',
   },
   [ErrorCode.ACCESS_DENIED]: {
     message: 'File ini bersifat private atau memerlukan izin akses.',
-    suggestion: 'Minta pemilik file untuk mengubah pengaturan sharing',
+    suggestion: 'Login dengan akun Google yang memiliki akses ke file ini',
   },
   [ErrorCode.QUOTA_EXCEEDED]: {
     message: 'Kuota download Google Drive telah habis.',

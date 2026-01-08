@@ -1,4 +1,14 @@
-import { ErrorCode, AppError } from '../types'
+import { ErrorCode, AppError, AuthErrorCode, AuthError } from '../types'
+
+/**
+ * Extended error info with login prompt support
+ * Requirements: 3.4, 4.4
+ */
+export interface ErrorInfo {
+  message: string
+  suggestion: string
+  requiresLogin?: boolean
+}
 
 /**
  * User-friendly error messages with suggested actions
@@ -7,18 +17,20 @@ import { ErrorCode, AppError } from '../types'
  * user-friendly error message with a suggested action.
  * Validates: Requirements 6.4
  */
-export const errorMessages: Record<ErrorCode, { message: string; suggestion: string }> = {
+export const errorMessages: Record<ErrorCode, ErrorInfo> = {
   [ErrorCode.INVALID_LINK]: {
     message: 'Link tidak valid. Pastikan link berasal dari Google Drive.',
     suggestion: 'Coba paste ulang link dari Google Drive',
   },
   [ErrorCode.FILE_NOT_FOUND]: {
-    message: 'File tidak ditemukan atau sudah dihapus.',
-    suggestion: 'Periksa kembali link atau hubungi pemilik file',
+    message: 'File tidak ditemukan. File mungkin sudah dihapus atau bersifat private.',
+    suggestion: 'Jika file bersifat private, coba login dengan akun Google yang memiliki akses',
+    requiresLogin: true,
   },
   [ErrorCode.ACCESS_DENIED]: {
     message: 'File ini bersifat private atau memerlukan izin akses.',
-    suggestion: 'Minta pemilik file untuk mengubah pengaturan sharing',
+    suggestion: 'Login dengan akun Google untuk mengakses file private',
+    requiresLogin: true,
   },
   [ErrorCode.QUOTA_EXCEEDED]: {
     message: 'Kuota download Google Drive telah habis.',
@@ -41,11 +53,114 @@ export const errorMessages: Record<ErrorCode, { message: string; suggestion: str
 /**
  * Get user-friendly error message for an error code
  */
-export function getErrorMessage(code: ErrorCode): { message: string; suggestion: string } {
+export function getErrorMessage(code: ErrorCode): ErrorInfo {
   return errorMessages[code] || {
     message: 'Terjadi kesalahan yang tidak diketahui.',
     suggestion: 'Coba lagi atau hubungi support',
   }
+}
+
+/**
+ * Auth error messages with suggested actions
+ * Requirements: 6.1, 6.2, 6.3, 6.4
+ * 
+ * AUTH_CANCELLED - consent denied
+ * AUTH_FAILED - token exchange error
+ * NETWORK_ERROR - connection failed
+ * SESSION_EXPIRED - refresh failed
+ */
+export interface AuthErrorInfo {
+  message: string
+  suggestion: string
+  canRetry: boolean
+  requiresReLogin: boolean
+}
+
+export const authErrorMessages: Record<AuthErrorCode, AuthErrorInfo> = {
+  [AuthErrorCode.AUTH_CANCELLED]: {
+    message: 'Login dibatalkan',
+    suggestion: 'Klik tombol login untuk mencoba lagi',
+    canRetry: true,
+    requiresReLogin: false,
+  },
+  [AuthErrorCode.AUTH_FAILED]: {
+    message: 'Autentikasi gagal',
+    suggestion: 'Terjadi kesalahan saat login. Silakan coba lagi',
+    canRetry: true,
+    requiresReLogin: false,
+  },
+  [AuthErrorCode.NETWORK_ERROR]: {
+    message: 'Koneksi gagal',
+    suggestion: 'Periksa koneksi internet dan coba lagi',
+    canRetry: true,
+    requiresReLogin: false,
+  },
+  [AuthErrorCode.SESSION_EXPIRED]: {
+    message: 'Sesi berakhir',
+    suggestion: 'Silakan login kembali untuk melanjutkan',
+    canRetry: false,
+    requiresReLogin: true,
+  },
+}
+
+/**
+ * Get user-friendly auth error message for an auth error code
+ * Requirements: 6.1, 6.2, 6.3, 6.4
+ */
+export function getAuthErrorMessage(code: AuthErrorCode): AuthErrorInfo {
+  return authErrorMessages[code] || {
+    message: 'Terjadi kesalahan autentikasi',
+    suggestion: 'Silakan coba login kembali',
+    canRetry: true,
+    requiresReLogin: false,
+  }
+}
+
+/**
+ * Create an AuthError from an auth error code
+ * Requirements: 6.1, 6.2, 6.3, 6.4
+ */
+export function createAuthError(code: AuthErrorCode): AuthError {
+  const { message, suggestion, canRetry, requiresReLogin } = getAuthErrorMessage(code)
+  return { code, message, suggestion, canRetry, requiresReLogin }
+}
+
+/**
+ * Parse auth error code from string
+ * Returns the AuthErrorCode if valid, null otherwise
+ */
+export function parseAuthErrorCode(code: string): AuthErrorCode | null {
+  if (Object.values(AuthErrorCode).includes(code as AuthErrorCode)) {
+    return code as AuthErrorCode
+  }
+  return null
+}
+
+/**
+ * Check if an auth error requires re-login
+ * Requirements: 6.4
+ */
+export function isReLoginRequired(code: AuthErrorCode): boolean {
+  const errorInfo = authErrorMessages[code]
+  return errorInfo?.requiresReLogin === true
+}
+
+/**
+ * Check if an auth error can be retried
+ * Requirements: 6.2, 6.3
+ */
+export function canRetryAuth(code: AuthErrorCode): boolean {
+  const errorInfo = authErrorMessages[code]
+  return errorInfo?.canRetry === true
+}
+
+/**
+ * Check if an error requires login to resolve
+ * Requirements: 3.4, 4.4
+ */
+export function isLoginRequiredError(code: ErrorCode): boolean {
+  const errorInfo = errorMessages[code]
+  return errorInfo?.requiresLogin === true
 }
 
 /**
