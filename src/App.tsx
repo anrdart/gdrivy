@@ -47,13 +47,13 @@ function App() {
   } = useAppStore()
 
   const downloadService = getDownloadService()
-  const { 
-    toasts, 
-    dismissToast, 
-    showSuccess, 
+  const {
+    toasts,
+    dismissToast,
+    showSuccess,
     showError,
     showDownloadComplete,
-    showDownloadFailed 
+    showDownloadFailed
   } = useToast()
 
   // Check auth status on mount and handle OAuth callback
@@ -99,7 +99,7 @@ function App() {
       // Start downloading files sequentially
       for (const file of metadata.files) {
         updateDownloadProgress(file.id, { status: 'downloading' })
-        
+
         const result = await downloadService.downloadFile(
           file.id,
           (progress, speed) => {
@@ -110,16 +110,16 @@ function App() {
         )
 
         if (result.success && result.blob) {
-          updateDownloadProgress(file.id, { 
-            status: 'completed', 
-            progress: 100 
+          updateDownloadProgress(file.id, {
+            status: 'completed',
+            progress: 100
           })
           // Use metadata filename as primary, result.fileName as fallback
           const downloadFileName = result.fileName || file.name
           downloadService.triggerBrowserDownload(result.blob, downloadFileName)
           showDownloadComplete(downloadFileName)
         } else {
-          updateDownloadProgress(file.id, { 
+          updateDownloadProgress(file.id, {
             status: 'failed',
             error: result.error?.message || 'Download failed'
           })
@@ -142,16 +142,16 @@ function App() {
       )
 
       if (result.success && result.blob) {
-        updateDownloadProgress(fileId, { 
-          status: 'completed', 
-          progress: 100 
+        updateDownloadProgress(fileId, {
+          status: 'completed',
+          progress: 100
         })
         // Use metadata filename as primary, result.fileName as fallback
         const downloadFileName = result.fileName || metadata.name
         downloadService.triggerBrowserDownload(result.blob, downloadFileName)
         showDownloadComplete(downloadFileName)
       } else {
-        updateDownloadProgress(fileId, { 
+        updateDownloadProgress(fileId, {
           status: 'failed',
           error: result.error?.message || 'Download failed'
         })
@@ -178,15 +178,15 @@ function App() {
     )
 
     if (result.success && result.blob) {
-      updateDownloadProgress(fileId, { 
-        status: 'completed', 
-        progress: 100 
+      updateDownloadProgress(fileId, {
+        status: 'completed',
+        progress: 100
       })
       const downloadFileName = result.fileName || fileName
       downloadService.triggerBrowserDownload(result.blob, downloadFileName)
       showDownloadComplete(downloadFileName)
     } else {
-      updateDownloadProgress(fileId, { 
+      updateDownloadProgress(fileId, {
         status: 'failed',
         error: result.error?.message || 'Download failed'
       })
@@ -213,10 +213,10 @@ function App() {
       size: download.fileSize || 0, // Use fileSize from download progress
       modifiedTime: new Date().toISOString(),
     },
-    status: download.status === 'pending' ? 'queued' : 
-            download.status === 'downloading' ? 'downloading' :
-            download.status === 'completed' ? 'completed' : 
-            download.status === 'cancelled' ? 'cancelled' : 'failed',
+    status: download.status === 'pending' ? 'queued' :
+      download.status === 'downloading' ? 'downloading' :
+        download.status === 'completed' ? 'completed' :
+          download.status === 'cancelled' ? 'cancelled' : 'failed',
     progress: download.progress,
   }))
 
@@ -261,7 +261,7 @@ function App() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
               </svg>
             </div>
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4 bg-gradient-to-r from-primary-400 via-primary-300 to-accent-400 bg-clip-text text-transparent">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4 bg-gradient-to-r from-primary-400 via-primary-300 to-accent-400 bg-clip-text text-transparent leading-normal pb-2">
               Google Drive Downloader
             </h1>
             <p className="text-gray-400 text-base sm:text-lg max-w-md mx-auto">
@@ -271,7 +271,7 @@ function App() {
 
           {/* Link Input Section */}
           <section className="mb-8 animate-slide-up">
-            <LinkInput 
+            <LinkInput
               onLinkSubmit={handleLinkSubmit}
               isLoading={isLoadingMetadata}
             />
@@ -281,7 +281,7 @@ function App() {
           {metadataError && (
             <section className="mb-8 animate-slide-up">
               {requiresLoginForAccess && !isAuthenticated ? (
-                <LoginPrompt 
+                <LoginPrompt
                   message={metadataError}
                   onDismiss={clearMetadataError}
                 />
